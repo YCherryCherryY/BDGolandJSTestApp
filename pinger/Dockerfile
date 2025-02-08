@@ -1,5 +1,5 @@
 # Используем официальный образ Go
-FROM golang:1.20
+FROM golang:1.23
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
@@ -11,10 +11,7 @@ COPY . .
 RUN go mod download
 
 # Собираем приложение
-RUN go build -o main .
-
-# Открываем порт
-EXPOSE 8080
+RUN go build -o pinger .
 
 # Запускаем приложение
-CMD ["./main"]
+CMD ["./pinger"]

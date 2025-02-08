@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
 
@@ -34,7 +36,7 @@ func getContainers() ([]types.Container, error) {
 		return nil, err
 	}
 
-	containers, err := cli.ContainerList(context.Background(), types.ContainerListOptions{})
+	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +54,13 @@ func sendStatusToBackend(ip string, status string, checkTime time.Time, lastSucc
 
 	}
 
-	resp, err := http.PostForm("http://backend:8080/statuses", payload)
+	// Преобразование payload в url.Values
+	form := url.Values{}
+	for key, value := range payload {
+		form.Set(key, value)
+	}
+
+	resp, err := http.PostForm("http://backend:8080/statuses", form)
 	if err != nil {
 		return err
 	}
@@ -75,33 +83,43 @@ func main() {
 			fmt.Println("Error getting containers:", err)
 			os.Exit(1)
 		}
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err == nil {
+			// Пингуем каждый контейнер и отправляем данные в Backend
+			for _, container := range containers {
 
-		// Пингуем каждый контейнер и отправляем данные в Backend
-		for _, container := range containers {
-			ip := container.NetworkSettings.IPAddress
-			if ip == "" {
-				continue
-			}
+				conJSON, err := cli.ContainerInspect(context.Background(), container.ID)
+				if err == nil {
+					ip := conJSON.NetworkSettings.IPAddress
+					if ip == "" {
+						continue
+					}
 
-			// Текущее время проверки
-			checkTime := time.Now()
+					// Текущее время проверки
+					checkTime := time.Now()
 
-			status, err := pingContainer(ip)
+					status, err := pingContainer(ip)
+					var lastSuccessTime time.Time
+					if err == nil {
 
-			var lastSuccessTime time.Time
-			if status == "online" {
-				lastSuccessTime = checkTime
-				lastSuccessTimes[ip] = lastSuccessTime
-			} else {
-				lastSuccessTime = lastSuccessTimes[ip] // Используем сохранённое время
-			}
+						if status == "online" {
+							lastSuccessTime = checkTime
+							lastSuccessTimes[ip] = lastSuccessTime
+						} else {
+							lastSuccessTime = lastSuccessTimes[ip] // Используем сохранённое время
+						}
+					} else {
+						lastSuccessTime = lastSuccessTimes[ip]
+					}
 
-			// Отправляем данные в Backend
-			err = sendStatusToBackend(ip, status, checkTime, lastSuccessTime)
-			if err != nil {
-				fmt.Println("Error sending status to backend:", err)
-			} else {
-				fmt.Printf("Status sent: IP=%s, Status=%s, Time=%s, LastSuccessTime=%s\n", ip, status, checkTime, lastSuccessTime)
+					// Отправляем данные в Backend
+					err = sendStatusToBackend(ip, status, checkTime, lastSuccessTime)
+					if err != nil {
+						fmt.Println("Error sending status to backend:", err)
+					} else {
+						fmt.Printf("Status sent: IP=%s, Status=%s, Time=%s, LastSuccessTime=%s\n", ip, status, checkTime, lastSuccessTime)
+					}
+				}
 			}
 		}
 
