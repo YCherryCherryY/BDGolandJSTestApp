@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS container_statuses (
+    id SERIAL PRIMARY KEY,
+    ip VARCHAR(15) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
